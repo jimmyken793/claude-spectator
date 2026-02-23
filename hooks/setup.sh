@@ -33,4 +33,4 @@ if [[ ":$PATH:" != *":${LINK_DIR}:"* ]]; then
   echo "Add to your shell profile: export PATH=\"\${HOME}/.local/bin:\${PATH}\""
 fi
 
-echo "claudecage: setup complete"
+echo "ClaudeSpectator: setup complete"
