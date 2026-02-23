@@ -54,9 +54,9 @@ Or install from a local clone:
 /plugin install ClaudeSpectator@jimmyken793
 ```
 
-The setup hook automatically:
-1. Symlinks `sandbox-run` into `~/.local/bin/`
-2. Validates platform dependencies (`sandbox-exec` on macOS, `bwrap` on Linux)
+The permission hook automatically rewrites `sandbox-run` commands to use the plugin's own binary, so no PATH setup is required.
+
+The setup hook validates platform dependencies (`sandbox-exec` on macOS, `bwrap` on Linux) and optionally symlinks `sandbox-run` into `~/.local/bin/` for direct shell use.
 
 ## Usage
 
@@ -179,6 +179,12 @@ Tests validate:
 |----------|----------------|--------|
 | macOS | `sandbox-exec` (Seatbelt) | Supported |
 | Linux | `bubblewrap` (bwrap) | Supported |
+
+## Support
+
+If you find this useful, consider supporting development:
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jomican)
 
 ## License
 

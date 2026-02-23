@@ -67,15 +67,16 @@ The plugin registers a `PermissionRequest` hook that intercepts all permission c
 Claude wants to run "sandbox-run git status"
   → Hook reads JSON from stdin
   → Checks if command starts with "sandbox-run "
-  → Returns {"behavior": "allow"} — auto-approved
+  → Rewrites command to "${CLAUDE_PLUGIN_ROOT}/bin/sandbox-run git status"
+  → Returns {"behavior": "allow"} with updatedInput — auto-approved
   → Claude proceeds without user prompt
 ```
 
-For non-sandbox commands, the hook returns `{"behavior": "ask"}` to fall through to normal permission flow.
+For commands already using the full plugin path, the hook approves without rewriting. For non-sandbox commands, the hook returns `{"behavior": "ask"}` to fall through to normal permission flow.
 
 ### Hook: Setup
 
-On plugin install, symlinks `sandbox-run` into `~/.local/bin/` so it's available on PATH across all projects.
+On plugin install, validates platform dependencies and optionally symlinks `sandbox-run` into `~/.local/bin/` for direct shell use. The symlink is not required — the permission hook rewrites bare `sandbox-run` commands to use the plugin's own binary at `${CLAUDE_PLUGIN_ROOT}/bin/sandbox-run`.
 
 ### Skill: sandboxed-execution
 

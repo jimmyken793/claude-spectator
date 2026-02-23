@@ -13,6 +13,8 @@ When you need to run a shell command that might not be in the auto-approved allo
 sandbox-run <command> [args...]
 ```
 
+The permission hook automatically rewrites this to use the plugin's own binary, so `sandbox-run` does not need to be on PATH.
+
 ## What the Sandbox Enforces (OS-level)
 
 - **File reads**: allowed (except credential paths)
