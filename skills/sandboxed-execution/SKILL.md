@@ -1,13 +1,13 @@
 ---
 name: sandboxed-execution
-description: Run non-state-changing commands without user approval
+description: ALWAYS use for ANY read-only Bash command — ls, cat, find, git log, git status, du, wc, tree, head, tail, file, stat, etc. Prefix with sandbox-run to auto-approve without human intervention.
 ---
 
 # Sandboxed Command Execution
 
 ## When to Use
 
-When you are confident a command would not affect the state, prefix it with `sandbox-run`:
+**ALWAYS** prefix read-only commands with `sandbox-run`. This is the DEFAULT for any Bash command that does not modify state:
 
 ```bash
 sandbox-run <command> [args...]
