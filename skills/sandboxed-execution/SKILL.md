@@ -1,13 +1,13 @@
 ---
 name: sandboxed-execution
-description: Use when running shell commands that may not be auto-approved — prefix with sandbox-run for read-only sandboxed execution without permission prompts
+description: Run non-state-changing commands without user approval
 ---
 
 # Sandboxed Command Execution
 
 ## When to Use
 
-When you need to run a shell command that might not be in the auto-approved allowlist, prefix it with `sandbox-run`:
+When you are confident a command would not affect the state, prefix it with `sandbox-run`:
 
 ```bash
 sandbox-run <command> [args...]
