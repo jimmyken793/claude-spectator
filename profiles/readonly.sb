@@ -1,0 +1,36 @@
+(version 1)
+(deny default)
+(import "system.sb")
+
+;; Block reads to known credential paths (evaluated before general allow)
+(deny file-read* (subpath (string-append (param "HOME") "/.ssh")))
+(deny file-read* (subpath (string-append (param "HOME") "/.aws")))
+(deny file-read* (subpath (string-append (param "HOME") "/.gnupg")))
+(deny file-read* (subpath (string-append (param "HOME") "/.config/gcloud")))
+(deny file-read* (subpath (string-append (param "HOME") "/.azure")))
+(deny file-read* (subpath (string-append (param "HOME") "/.kube")))
+(deny file-read* (subpath (string-append (param "HOME") "/.docker")))
+(deny file-read* (literal (string-append (param "HOME") "/.netrc")))
+(deny file-read* (literal (string-append (param "HOME") "/.npmrc")))
+(deny file-read* (literal (string-append (param "HOME") "/.git-credentials")))
+(deny file-read* (subpath (string-append (param "HOME") "/.config/gh")))
+(deny file-read* (subpath (string-append (param "HOME") "/.local/share/keyrings")))
+
+;; Allow all other file reads
+(allow file-read*)
+
+;; Deny all file writes
+(deny file-write*)
+
+;; Allow process execution
+(allow process-fork)
+(allow process-exec)
+
+;; Allow signals to own process
+(allow signal (target self))
+
+;; Allow sysctl reads (needed by many tools)
+(allow sysctl-read)
+
+;; Deny network access
+(deny network*)

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROFILE_DIR="${SCRIPT_DIR}/../profiles"
+
+# Prevent git from attempting optional lock file writes
+export GIT_OPTIONAL_LOCKS=0
+
+# Default credential paths to block (relative to HOME)
+DENY_PATHS=(
+  .ssh
+  .aws
+  .gnupg
+  .config/gcloud
+  .azure
+  .kube
+  .docker
+  .netrc
+  .npmrc
+  .git-credentials
+  .config/gh
+  .local/share/keyrings
+)
+
+# Append user-defined extra deny paths (colon-separated, relative to HOME or absolute)
+if [[ -n "${SPECTATOR_EXTRA_DENY:-}" ]]; then
+  IFS=':' read -ra EXTRA <<< "$SPECTATOR_EXTRA_DENY"
+  DENY_PATHS+=("${EXTRA[@]}")
+fi
+
+case "$(uname -s)" in
+  Darwin)
+    PROFILE="${PROFILE_DIR}/readonly.sb"
+
+    # If extra deny paths are set, generate a dynamic profile
+    # Rules must be inserted BEFORE (allow file-read*) since SBPL uses first-match
+    if [[ -n "${SPECTATOR_EXTRA_DENY:-}" ]]; then
+      TMPPROFILE="$(mktemp)"
+      trap 'rm -f "$TMPPROFILE"' EXIT
+      EXTRA_RULES=""
+      for p in "${EXTRA[@]}"; do
+        if [[ "$p" = /* ]]; then
+          EXTRA_RULES+=$'\n'"(deny file-read* (subpath \"${p}\"))"
+        else
+          EXTRA_RULES+=$'\n'"(deny file-read* (subpath (string-append (param \"HOME\") \"/${p}\")))"
+        fi
+      done
+      # Insert extra deny rules before the allow-all line
+      sed "s|^(allow file-read\*)|${EXTRA_RULES}"$'\n'"(allow file-read*)|" "$PROFILE" > "$TMPPROFILE"
+      PROFILE="$TMPPROFILE"
+    fi
+
+    exec sandbox-exec -D "HOME=${HOME}" -f "$PROFILE" "$@"
+    ;;
+  Linux)
+    if ! command -v bwrap &>/dev/null; then
+      echo "Error: bwrap (bubblewrap) not installed." >&2
+      echo "Install with: sudo apt install bubblewrap" >&2
+      exit 1
+    fi
+
+    # Build tmpfs mounts for credential paths
+    DENY_ARGS=()
+    for p in "${DENY_PATHS[@]}"; do
+      if [[ "$p" = /* ]]; then
+        target="$p"
+      else
+        target="${HOME}/${p}"
+      fi
+      # Only mount tmpfs if the path exists (bwrap fails on nonexistent paths)
+      if [[ -e "$target" ]]; then
+        DENY_ARGS+=(--tmpfs "$target")
+      fi
+    done
+
+    exec bwrap \
+      --ro-bind / / \
+      --dev /dev \
+      --proc /proc \
+      --tmpfs /tmp \
+      "${DENY_ARGS[@]}" \
+      --unshare-net \
+      --die-with-parent \
+      -- "$@"
+    ;;
+  *)
+    echo "Error: Unsupported OS '$(uname -s)'" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,31 @@
+{
+  "description": "Sandboxed command execution with auto-approval",
+  "hooks": {
+    "Setup": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/setup.sh'",
+            "async": false,
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/permission-check.sh'",
+            "async": false,
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

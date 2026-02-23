@@ -1,0 +1,10 @@
+{
+  "name": "ClaudeSpectator",
+  "description": "OS-level read-only sandbox for safe command execution",
+  "author": {
+    "name": "Jimmy Cheng",
+    "email": "jimmy@kingyoung.com.tw"
+  },
+  "version": "1.0.0",
+  "license": "MIT"
+}
