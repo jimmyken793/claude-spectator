@@ -14,11 +14,11 @@ SANDBOX_BIN="${PLUGIN_ROOT}/bin/sandbox-run"
 if [[ "$TOOL_NAME" == "Bash" && ( "$COMMAND" == "sandbox-run "* || "$COMMAND" == "sandbox-run" ) ]]; then
   # Rewrite bare sandbox-run to use the plugin's own binary
   REWRITTEN="${SANDBOX_BIN}${COMMAND#sandbox-run}"
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\"},\"updatedInput\":{\"command\":\"${REWRITTEN}\"}}}"
+  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"${REWRITTEN}\"}}}}"
 elif [[ "$TOOL_NAME" == "Bash" && ( "$COMMAND" == "${SANDBOX_BIN} "* || "$COMMAND" == "$SANDBOX_BIN" ) ]]; then
   # Already using full path — approve as-is
   echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
 else
   # Fall through to normal permission flow
-  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"ask"}}}'
+  exit 0
 fi
