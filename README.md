@@ -35,10 +35,23 @@ Claude Code ─── sandbox-run <cmd> ───▶ OS Sandbox ───▶ Com
 
 ## Installation
 
-Install as a Claude Code plugin:
+Inside a Claude Code session, first add the marketplace:
 
-```bash
-claude plugin add jimmyken793/ClaudeSpectator
+```
+/plugin marketplace add jimmyken793/ClaudeSpectator
+```
+
+Then install the plugin:
+
+```
+/plugin install ClaudeSpectator@jimmyken793
+```
+
+Or install from a local clone:
+
+```
+/plugin marketplace add /path/to/ClaudeSpectator
+/plugin install ClaudeSpectator@jimmyken793
 ```
 
 The setup hook automatically:
