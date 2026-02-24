@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/permission-check.sh'",
+            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/permission-check.py'",
             "async": false,
             "timeout": 5
           }

