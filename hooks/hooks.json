@@ -14,7 +14,7 @@
         ]
       }
     ],
-    "PreToolUse": [
+    "PermissionRequest": [
       {
         "matcher": "Bash",
         "hooks": [
