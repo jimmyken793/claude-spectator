@@ -26,6 +26,8 @@ def main():
         return
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    if not plugin_root:
+        return  # refuse to auto-approve without a known plugin root
     sandbox_bin = os.path.join(plugin_root, "bin", "sandbox-run")
 
     # Check if this is a sandbox-run command and extract the arguments

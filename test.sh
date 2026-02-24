@@ -33,11 +33,12 @@ assert_fail() {
 # Using python3 ensures quotes, newlines, etc. are correctly escaped.
 run_hook() {
   local cmd="$1"
-  python3 -c "
-import json, sys, subprocess
+  CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT-$SCRIPT_DIR}" python3 -c "
+import json, sys, subprocess, os
 cmd = sys.argv[1]
 payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': cmd}})
-proc = subprocess.run([sys.argv[2]], input=payload, capture_output=True, text=True)
+env = os.environ.copy()
+proc = subprocess.run([sys.argv[2]], input=payload, capture_output=True, text=True, env=env)
 sys.stdout.write(proc.stdout)
 " "$cmd" "$HOOK"
 }
@@ -167,6 +168,44 @@ assert_fail "redirect append contained"      bash -c "echo test >> /tmp/sandbox-
 assert_fail "semicolon write contained"      bash -c "echo ok; touch /tmp/sandbox-semicolon-test"
 # And-chain: write after read should fail inside sandbox
 assert_fail "and-chain write contained"      bash -c "ls /etc && touch /tmp/sandbox-and-test"
+
+echo ""
+echo "=== Sandbox: SPECTATOR_EXTRA_DENY injection (should reject) ==="
+# Paths containing SBPL-breaking characters must be rejected
+if SPECTATOR_EXTRA_DENY='/tmp/x"))(allow network*)(deny file-read* (subpath "/dev/null' \
+   "$SANDBOX" echo safe 2>/dev/null; then
+  fail "SBPL injection via double-quote (expected failure)"
+else
+  pass "SBPL injection via double-quote rejected"
+fi
+
+echo ""
+echo "=== Sandbox: symlink traversal vs credential deny ==="
+# Symlink from non-blocked path to credential dir should still be blocked.
+# Note: ls on the symlink ENTRY itself is allowed (just a dir listing of parent),
+# but following the symlink to access target contents must be denied.
+if [[ -d "${HOME}/.ssh" ]]; then
+  SYMLINK_DIR=$(mktemp -d)
+  ln -s "${HOME}/.ssh" "${SYMLINK_DIR}/ssh_link"
+  # Trailing / forces following the symlink into the target directory
+  assert_fail "symlink dir traversal"  ls "${SYMLINK_DIR}/ssh_link/"
+  # Reading a file through a symlink should also be blocked
+  if [[ -f "${HOME}/.ssh/known_hosts" ]]; then
+    ln -s "${HOME}/.ssh/known_hosts" "${SYMLINK_DIR}/kh_link"
+    assert_fail "symlink file traversal" cat "${SYMLINK_DIR}/kh_link"
+  fi
+  rm -rf "$SYMLINK_DIR"
+fi
+
+echo ""
+echo "=== Permission hook: missing CLAUDE_PLUGIN_ROOT (should reject) ==="
+# With empty plugin root, hook should fall through (not auto-approve)
+result=$(CLAUDE_PLUGIN_ROOT="" run_hook "sandbox-run ls /etc")
+if echo "$result" | grep -q '"allow"'; then
+  fail "auto-approved with empty CLAUDE_PLUGIN_ROOT"
+else
+  pass "rejected with empty CLAUDE_PLUGIN_ROOT"
+fi
 
 echo ""
 echo "=== Permission hook: reject non-sandbox commands ==="

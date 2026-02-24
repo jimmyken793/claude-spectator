@@ -41,22 +41,50 @@ case "$(uname -s)" in
       PROFILE="${PROFILE_DIR}/readonly.sb"
     fi
 
-    # If extra deny paths are set, generate a dynamic profile
-    # Rules must be inserted BEFORE (allow file-read*) since SBPL uses first-match
+    # If extra deny paths are set, generate a dynamic profile using Python
+    # to avoid SBPL injection via unsanitized path interpolation.
+    # Rules must be inserted BEFORE (allow file-read*) since SBPL uses first-match.
     if [[ -n "${SPECTATOR_EXTRA_DENY:-}" ]]; then
       TMPPROFILE="$(mktemp)"
       trap 'rm -f "$TMPPROFILE"' EXIT
-      EXTRA_RULES=""
-      for p in "${EXTRA[@]}"; do
-        if [[ "$p" = /* ]]; then
-          EXTRA_RULES+=$'\n'"(deny file-read* (subpath \"${p}\"))"
-        else
-          EXTRA_RULES+=$'\n'"(deny file-read* (subpath (string-append (param \"HOME\") \"/${p}\")))"
-        fi
-      done
-      # Insert extra deny rules before the allow-all line
-      sed "s|^(allow file-read\*)|${EXTRA_RULES}"$'\n'"(allow file-read*)|" "$PROFILE" > "$TMPPROFILE"
-      PROFILE="$TMPPROFILE"
+      PROFILE=$(python3 -c "
+import os, sys
+
+profile_path, extra_deny, home = sys.argv[1], sys.argv[2], sys.argv[3]
+paths = [p for p in extra_deny.split(':') if p]
+
+# Reject paths containing characters that could break SBPL string literals
+for p in paths:
+    if '\"' in p or '\\\\' in p:
+        print(f'Error: SPECTATOR_EXTRA_DENY path contains unsafe characters: {p}',
+              file=sys.stderr)
+        sys.exit(1)
+
+# Build SBPL deny rules with safely quoted paths.
+# Resolve to real paths so /var -> /private/var etc. match correctly.
+rules = []
+for p in paths:
+    if p.startswith('/'):
+        real = os.path.realpath(p)
+        rules.append(f'(deny file-read* (subpath \"{real}\"))')
+    else:
+        real = os.path.realpath(os.path.join(home, p))
+        rules.append(f'(deny file-read* (subpath \"{real}\"))')
+
+extra_block = '\n'.join(rules)
+
+with open(profile_path) as f:
+    profile = f.read()
+
+# Insert deny rules before the allow-all line
+profile = profile.replace('(allow file-read*)', extra_block + '\n(allow file-read*)', 1)
+
+out_path = sys.argv[4]
+with open(out_path, 'w') as f:
+    f.write(profile)
+
+print(out_path)
+" "$PROFILE" "$SPECTATOR_EXTRA_DENY" "$HOME" "$TMPPROFILE")
     fi
 
     exec sandbox-exec -D "HOME=${HOME}" -f "$PROFILE" "$@"
@@ -89,6 +117,7 @@ case "$(uname -s)" in
       --tmpfs /tmp \
       "${DENY_ARGS[@]}" \
       --unshare-net \
+      --unshare-pid \
       --die-with-parent \
       -- "$@"
     ;;
