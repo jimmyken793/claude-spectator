@@ -13,6 +13,22 @@ import shlex
 import sys
 
 
+def get_plugin_root():
+    """Resolve the plugin root directory.
+
+    Priority: sys.argv[1] (passed by hooks.json) > __file__-based derivation.
+    CLAUDE_PLUGIN_ROOT is template-only in hook commands and is NOT available
+    as an environment variable in all contexts, so we use multiple strategies.
+    """
+    # 1. Passed as argument by hooks.json: '${CLAUDE_PLUGIN_ROOT}'
+    if len(sys.argv) > 1 and sys.argv[1]:
+        return sys.argv[1]
+
+    # 2. Derive from script location: hooks/permission-check.py -> plugin root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(script_dir)
+
+
 def main():
     try:
         request = json.load(sys.stdin)
@@ -25,7 +41,7 @@ def main():
     if tool_name != "Bash":
         return
 
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    plugin_root = get_plugin_root()
     if not plugin_root:
         return  # refuse to auto-approve without a known plugin root
     sandbox_bin = os.path.join(plugin_root, "bin", "sandbox-run")
@@ -55,6 +71,7 @@ def main():
 
     result = {
         "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "updatedInput": {"command": rewritten},
         }
