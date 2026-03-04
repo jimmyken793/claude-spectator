@@ -6,10 +6,12 @@ Rewrites sandbox-run commands to use the plugin's binary and wraps
 arguments in bash -c with shlex.quote() so shell metacharacters
 (pipes, redirections, semicolons, etc.) execute INSIDE the sandbox.
 
-Workaround for https://github.com/anthropics/claude-code/issues/15897:
-updatedInput is broken when multiple PreToolUse hooks exist, so we use
-deny+reason to force Claude to retry with the rewritten command, then
-allow the full-path version on retry.
+Uses PermissionRequest event (not PreToolUse) because:
+1. PermissionRequest has a different decision format where updatedInput
+   is nested inside decision{}, potentially avoiding the multi-hook
+   aggregation bug (github.com/anthropics/claude-code/issues/15897)
+2. PermissionRequest fires when permission dialog would appear, which
+   is exactly when sandbox-run needs auto-approval
 """
 
 import json
@@ -26,11 +28,14 @@ def get_plugin_root():
     return os.path.dirname(script_dir)
 
 
+DEBUG = False
 LOG_FILE = os.path.join(os.path.expanduser("~"), ".claude", "spectator-debug.log")
 
 
 def debug(msg):
     """Write debug message to stderr AND a log file for diagnosis."""
+    if not DEBUG:
+        return
     print(f"[claude-spectator] {msg}", file=sys.stderr)
     try:
         with open(LOG_FILE, "a") as f:
@@ -62,44 +67,42 @@ def main():
         return
     sandbox_bin = os.path.join(plugin_root, "bin", "sandbox-run")
 
-    # Case 1: Full-path sandbox-run command → allow directly
-    if command == sandbox_bin or command.startswith(sandbox_bin + " "):
-        result = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "allow",
-                "permissionDecisionReason": "sandbox-run auto-approved by claude-spectator",
-            }
-        }
-        debug(f"ALLOW full-path command")
-        sys.stdout.write(json.dumps(result) + "\n")
-        sys.stdout.flush()
+    # Check if this is a sandbox-run command and extract the arguments
+    prefixes = ("sandbox-run", sandbox_bin)
+    sandbox_args = None
+    for prefix in prefixes:
+        if command == prefix:
+            sandbox_args = ""
+            break
+        if command.startswith(prefix + " "):
+            sandbox_args = command[len(prefix) + 1:]
+            break
+
+    if sandbox_args is None:
+        debug("not a sandbox-run command")
         return
 
-    # Case 2: Bare "sandbox-run" command → deny with rewritten command
-    if command == "sandbox-run" or command.startswith("sandbox-run "):
-        sandbox_args = command[len("sandbox-run"):].lstrip()
-        if sandbox_args:
-            rewritten = sandbox_bin + " bash -c " + shlex.quote(sandbox_args)
-        else:
-            rewritten = sandbox_bin
+    # Build the rewritten command
+    if sandbox_args:
+        rewritten = sandbox_bin + " bash -c " + shlex.quote(sandbox_args)
+    else:
+        rewritten = sandbox_bin
 
-        result = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": (
-                    f"sandbox-run is not in PATH. "
-                    f"Use the full path instead: {rewritten}"
-                ),
-            }
+    # PermissionRequest format: decision.behavior + decision.updatedInput
+    result = {
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {
+                "behavior": "allow",
+                "updatedInput": {"command": rewritten},
+            },
         }
-        debug(f"DENY bare sandbox-run, suggesting: {rewritten[:100]}")
-        sys.stdout.write(json.dumps(result) + "\n")
-        sys.stdout.flush()
-        return
-
-    debug(f"not a sandbox-run command")
+    }
+    output = json.dumps(result)
+    debug(f"ALLOWING via PermissionRequest: {rewritten[:100]}")
+    debug(f"stdout JSON: {output}")
+    sys.stdout.write(output + "\n")
+    sys.stdout.flush()
 
 
 try:
